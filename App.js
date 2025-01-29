@@ -8,7 +8,21 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { TouchableOpacity } from 'react-native';
 import 'react-native-gesture-handler';
-import { ScrollView } from 'react-native-gesture-handler';
+//import { Swipeable } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+
+import * as SplashScreen from 'expo-splash-screen';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
+
+// Set the animation options. This is optional.
+SplashScreen.setOptions({
+  duration: 300,
+  fade: true,
+});
+
 
 const Tab = createBottomTabNavigator();
 
@@ -64,15 +78,10 @@ const RecipesScreen = ({ recipes, logRecipe, removeRecipe }) => {
         data={filteredRecipes}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
+          <Swipeable renderRightActions={() => renderRightActions(item.id, removeRecipe)}>
           <View style={styles.recipeItem}>
             <Text style={styles.recipeText} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text><Text style={styles.recipeTextcal}> {item.calories} P</Text>
             <View style={styles.recipeButtons}>
-            <TouchableOpacity
-                style={styles.iconButton}
-                onPress={() => removeRecipe(item.id)}
-              >
-                <Icon name="trash-outline" size={24} color="red" />
-              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={() => logRecipe(item)}
@@ -82,6 +91,7 @@ const RecipesScreen = ({ recipes, logRecipe, removeRecipe }) => {
               </TouchableOpacity>
             </View>
           </View>
+          </Swipeable>
         )}
       />
     </View>
@@ -97,13 +107,28 @@ const DailyLogScreen = ({ dailyLog, removeFromLog, calculateTotalCalories, logDa
         const storedLogs = await AsyncStorage.getItem('logs');
         if (storedLogs) {
           const parsedLogs = JSON.parse(storedLogs);
-          const otherDays = Object.entries(parsedLogs)
-            .filter(([date]) => date !== logDate)
+          const today = new Date();
+          const todayString = today.toISOString().split('T')[0];
+          const sevenDaysAgo = new Date(today);
+          sevenDaysAgo.setDate(today.getDate() - 7);
+    
+          // Filter logs to only include entries from the last seven days and exclude the current date
+          const filteredLogs = Object.entries(parsedLogs)
+            .filter(([date]) => new Date(date) >= sevenDaysAgo && date !== todayString)
             .map(([date, logs]) => ({
               date,
               totalCalories: logs.reduce((total, item) => total + item.calories, 0),
-            }));
-          setHistoricalLogs(otherDays);
+            }))
+            .sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort in descending order by date
+    
+          setHistoricalLogs(filteredLogs);
+          
+          // Save the filtered logs back to AsyncStorage
+          const filteredLogsObject = filteredLogs.reduce((acc, { date, totalCalories }) => {
+            acc[date] = parsedLogs[date];
+            return acc;
+          }, {});
+          await AsyncStorage.setItem('logs', JSON.stringify(filteredLogsObject));
         }
       } catch (error) {
         console.error('Error loading historical logs:', error);
@@ -131,6 +156,11 @@ const DailyLogScreen = ({ dailyLog, removeFromLog, calculateTotalCalories, logDa
   <View style={styles.container}>
     <Text style={styles.sectionTitle}>Daily Log ({logDate})</Text>
     <View style={styles.dailyLogContainer}>
+    { dailyLog.length === 0 ? (
+      <View>
+      <Text style={styles.noEntriesText}>No entries...please have some food.</Text>
+      <Text style={styles.noEntriesText}>You must be starving.</Text></View>
+    ) : (
     <FlatList
       data={dailyLog}
       keyExtractor={(item, index) => index.toString()}
@@ -141,18 +171,21 @@ const DailyLogScreen = ({ dailyLog, removeFromLog, calculateTotalCalories, logDa
         </View>
       )}
     />
+    )}
     </View>
-    <Text style={styles.totalCalories}><Text style={styles.totalCalories}>Total Points:</Text><Text style={[styles.totalCalories, { color: calorieColor },]}> {totalCalories}</Text></Text>
+    <View style={styles.totalContainer}>
+    <Text style={styles.totalCalories}><Text style={styles.totalCalories}>Total Points Today:</Text><Text style={[styles.totalCalories, { color: calorieColor },]}> {totalCalories}</Text></Text>
     <Text style={styles.goalText}>Daily Goal: {dailyGoal || 'Not Set'}</Text>
-
+    </View>
     <Text style={styles.sectionTitle}>Previous Logs</Text>
+    
       <FlatList
         data={historicalLogs}
         keyExtractor={(item) => item.date}
         renderItem={({ item }) => (
           <View style={styles.historyItem}>
             <Text style={styles.historyDate}>{item.date}</Text>
-            <Text style={styles.historyCalories}><Text style={styles.historyCalories}>Total Points:</Text><Text style={[styles.historyCalories, { color: calorieColor },]}> {item.totalCalories}</Text></Text>
+            <Text style={styles.historyCalories}><Text style={styles.historyCalories}>Total Points:</Text><Text style={styles.historyCalories}> {item.totalCalories}</Text></Text>
           </View>
         )}
       />
@@ -192,6 +225,9 @@ const App = () => {
         if (storedGoal) setDailyGoal(storedGoal);
 
         setLogDate(today);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Hide the splash screen after the delay
+        await SplashScreen.hideAsync();
       } catch (error) {
         console.error('Error loading data:', error);
       }
@@ -205,6 +241,18 @@ const App = () => {
       const storedLogs = await AsyncStorage.getItem('logs');
       const logs = storedLogs ? JSON.parse(storedLogs) : {};
       logs[today] = updatedLog;
+
+      // Remove logs older than seven days
+      const currentDate = new Date();
+      const sevenDaysAgo = new Date(currentDate);
+      sevenDaysAgo.setDate(currentDate.getDate() - 7);
+
+      Object.keys(logs).forEach((date) => {
+        if (new Date(date) < sevenDaysAgo) {
+          delete logs[date];
+        }
+      });
+
       await AsyncStorage.setItem('logs', JSON.stringify(logs));
     } catch (error) {
       console.error('Error saving daily log:', error);
@@ -295,6 +343,7 @@ const App = () => {
 }
 
   return (
+    <GestureHandlerRootView>
     <NavigationContainer>
       <View style={styles.topBanner}>
         <Text style={styles.bannerText}>FoodLog</Text>
@@ -354,8 +403,18 @@ const App = () => {
       </Tab.Navigator>
       <TotalCaloriesBanner />
     </NavigationContainer>
+    </GestureHandlerRootView>
   );
 };
+
+const renderRightActions = (id, removeRecipe) => (
+  <TouchableOpacity
+    style={styles.deleteButton}
+    onPress={() => removeRecipe(id)}
+  >
+    <Icon name="trash-outline" size={24} color="#fff" />
+  </TouchableOpacity>
+);
 
 const styles = StyleSheet.create({
   container: {
@@ -394,7 +453,7 @@ const styles = StyleSheet.create({
   recipeButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: 160,
+    width: 90,
   },
   iconButton: {
     flexDirection: 'row',
@@ -408,21 +467,32 @@ const styles = StyleSheet.create({
     marginLeft: 5,
     fontSize: 14,
   },
-  totalCalories: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 20,
-    textAlign: 'center',
+  totalContainer: {
+    borderWidth: 1,
+    borderRadius: 5,
+    borderColor: '#ccc',
   },
-  goalText: {
+  totalCalories: {
     fontSize: 18,
     fontWeight: 'bold',
     marginTop: 10,
     textAlign: 'center',
   },
+  goalText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginVertical: 10,
+    textAlign: 'center',
+  },
   dailyLogContainer: {
+    minHeight: '25%',
     maxHeight: '40%',
-    marginBottom: 10,
+  },
+  noEntriesText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: 'gray',
+    marginTop: 20,
   },
   historyItem: {
     marginVertical: 8,
@@ -456,6 +526,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  deleteButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    backgroundColor: 'red',
+    marginHorizontal: 6,
   },
 });
 
