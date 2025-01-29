@@ -225,7 +225,7 @@ const App = () => {
         if (storedGoal) setDailyGoal(storedGoal);
 
         setLogDate(today);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         // Hide the splash screen after the delay
         await SplashScreen.hideAsync();
       } catch (error) {

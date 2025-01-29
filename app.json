@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
+      "resizeMode": "native",
       "backgroundColor": "#a8c480"
     },
     "plugins": [
@@ -18,7 +18,7 @@
         {
           "backgroundColor": "#a8c480",
           "image": "./assets/splash-icon.png",
-          "imageWidth": 200
+          "imageWidth": 100
         }
       ]
     ],
